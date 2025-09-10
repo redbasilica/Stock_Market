@@ -51,12 +51,10 @@ if 'ticker_info_cache' not in st.session_state:
 if 'show_help' not in st.session_state:
     st.session_state.show_help = False
 
-
 # ---------------------- Help Panel ----------------------
 
 def toggle_help():
     st.session_state.show_help = not st.session_state.show_help
-
 
 # Help button in the top right
 col_main, col_help = st.columns([10, 1])
@@ -68,21 +66,21 @@ if st.session_state.show_help:
     with st.container():
         st.info("""
         ### 📖 Kullanım Kılavuzu
-
+        
         **1. Filtre Ayarları**
         - **MA Yakınlık Toleransı**: Hissenin hareketli ortalamalara ne kadar yakın olması gerektiğini belirler
         - **Hacim Artış Eşiği**: Normal hacmin kaç katı işlem görmesi gerektiğini belirler
         - **RSI Dip Seviyesi**: RSI göstergesinin maksimum değerini belirler (opsiyonel)
         - **Tavan Filtresi**: Bugün %9.5 ve üzeri artış gösteren hisseleri filtreler
-
+        
         **2. Hisse Seçimi**
         - Belirli hisseleri taramak için listeden seçin
         - Boş bırakırsanız tüm hisseler taranır
-
+        
         **3. Tarama**
         - "Taramayı Başlat" butonuna tıklayın
         - Sonuçlar otomatik olarak listelenecektir
-
+        
         **4. Sonuçlar**
         - Her hisse için detaylı bilgiler görüntülenir
         - Grafik göster seçeneği ile teknik analiz grafikleri incelenebilir
@@ -91,7 +89,6 @@ if st.session_state.show_help:
         if st.button("✖️ Kapat", key="close_help"):
             st.session_state.show_help = False
             st.rerun()
-
 
 # ---------------------- Veri yükleme ----------------------
 
@@ -157,7 +154,6 @@ def load_stock_data():
         st.error(f"Veri yüklenirken hata oluştu: {str(e)}")
         return None, {}, {}
 
-
 # ---------------------- Optimized Technical Calculations ----------------------
 
 @lru_cache(maxsize=128)
@@ -177,7 +173,6 @@ def calculate_rsi_vectorized(close_prices, period=14):
     # Pad the beginning to match original length
     rsi_full = np.concatenate([np.full(period, np.nan), rsi[:len(close_array) - period]])
     return rsi_full[-1] if len(rsi_full) > 0 else np.nan
-
 
 def calculate_all_indicators(data):
     """Calculate all technical indicators at once"""
@@ -208,7 +203,6 @@ def calculate_all_indicators(data):
 
     return data
 
-
 # ---------------------- Parallel Data Fetching ----------------------
 
 def fetch_stock_data(ticker, period="90d", cache_dict=None):
@@ -232,7 +226,6 @@ def fetch_stock_data(ticker, period="90d", cache_dict=None):
 
     return ticker, None
 
-
 def fetch_ticker_info(ticker, cache_dict=None):
     """Fetch ticker info with optional caching"""
     if cache_dict and ticker in cache_dict:
@@ -245,7 +238,6 @@ def fetch_ticker_info(ticker, cache_dict=None):
         return ticker, info
     except:
         return ticker, {}
-
 
 # ---------------------- Optimized Scanning Function ----------------------
 
@@ -326,19 +318,27 @@ def scan_stocks_parallel(tickers, ma_tolerance, volume_threshold, use_ma, use_vo
 
     return pd.DataFrame(results)
 
-
 # ---------------------- Optimized Plotting ----------------------
 
 @st.cache_data
 def prepare_plot_data(ticker):
     """Prepare data for plotting with caching"""
-    data = yf.download(ticker, period="1y", interval="1d", progress=False, threads=False)
-    if data.empty or len(data) < 50:
+    try:
+        data = yf.download(ticker, period="1y", interval="1d", progress=False, threads=False)
+        if data.empty or len(data) < 50:
+            return None
+        
+        # Ensure we have the required columns
+        if 'Close' not in data.columns:
+            # Handle multi-level columns from yfinance
+            if isinstance(data.columns, pd.MultiIndex):
+                data.columns = data.columns.get_level_values(0)
+        
+        data = calculate_all_indicators(data)
+        return data
+    except Exception as e:
+        st.error(f"Veri hazırlanırken hata: {str(e)}")
         return None
-
-    data = calculate_all_indicators(data)
-    return data
-
 
 def plot_stock_chart(data, ticker_name):
     """Optimized plotting function"""
@@ -384,7 +384,6 @@ def plot_stock_chart(data, ticker_name):
     st.pyplot(fig)
     plt.clf()
     plt.close()  # Explicitly close the figure to free memory
-
 
 # ---------------------- Load Initial Data ----------------------
 
@@ -604,12 +603,12 @@ if scan_button:
             # Export functionality
             st.markdown("---")
             st.subheader("💾 Dışa Aktarma")
-
+            
             col1, col2, col3 = st.columns([1, 1, 2])
-
+            
             # Get current date for filename
             current_date = datetime.now().strftime("%Y%m%d")
-
+            
             with col1:
                 # Export as CSV
                 csv = df.to_csv(index=False).encode('utf-8')
@@ -620,13 +619,13 @@ if scan_button:
                     mime='text/csv',
                     use_container_width=True
                 )
-
+            
             with col2:
                 # Export as Excel
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
                     df.to_excel(writer, sheet_name='Tarama Sonuçları', index=False)
-
+                    
                     # Auto-adjust columns width
                     worksheet = writer.sheets['Tarama Sonuçları']
                     for column in worksheet.columns:
@@ -640,9 +639,9 @@ if scan_button:
                                 pass
                         adjusted_width = min(max_length + 2, 50)
                         worksheet.column_dimensions[column_letter].width = adjusted_width
-
+                
                 excel_data = output.getvalue()
-
+                
                 st.download_button(
                     label="📊 Excel İndir",
                     data=excel_data,
@@ -650,7 +649,7 @@ if scan_button:
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                     use_container_width=True
                 )
-
+            
             with col3:
                 st.info(f"📅 Tarama Tarihi: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
 
